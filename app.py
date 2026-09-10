@@ -378,8 +378,9 @@ def identity_header(study, manifest):
              "imported": "badge-imported"}.get(t, "badge-imported")
     tot = manifest.get("totals", {})
     actual = ", ".join(manifest.get("actual_models", [])) or "—"
-    locs = "; ".join(f'{L["city"]}, {L["region"]}, {L["country"]}'
-                     for L in manifest.get("locations", []))
+    locs = "; ".join(ds.format_location(L)
+                     for L in manifest.get("locations", [])
+                     if ds.format_location(L)) or "—"
     st.markdown(f"""
 <div class="pd-banner">
   <span class="badge {badge}">{t.upper()} DATASET</span>
@@ -530,6 +531,30 @@ if page == "Quick Run":
 
         res = runner.run_batch(client, study, manifest, pricing(),
                                progress=qcb)
+        # In-memory rollups for the on-page dashboard (top fan-out queries +
+        # top cited domains), computed once from the raw responses this run
+        # returned — no dependence on server storage.
+        from core.extraction import extract_observation as _extract
+        from collections import Counter as _Counter
+        _qc, _dc = _Counter(), _Counter()
+        for _it in res.get("raw") or []:
+            _rawr = _it.get("response")
+            if not _rawr:
+                continue
+            try:
+                _ex = _extract(_rawr, None)
+            except Exception:
+                continue
+            for _q in _ex.get("fanout_queries", []):
+                _qt = (_q.get("query") or "").strip()
+                if _qt:
+                    _qc[_qt] += 1
+            for _c in _ex.get("citations", []):
+                _dom = _c.get("domain") or ""
+                if _dom:
+                    _dc[_dom] += 1
+        res["_top_queries"] = _qc.most_common(5)
+        res["_top_domains"] = _dc.most_common(5)
         st.session_state["qr_last"] = res
 
     # Run result + in-memory download. Rendered OUTSIDE the Run-now button so it
@@ -544,38 +569,61 @@ if page == "Quick Run":
             _ok = sum(1 for r in _rows if r.get("status") == "ok")
             _failed = len(_rows) - _ok
             st.success(f'Run complete — {_ok} ok, {_failed} failed, '
-                       f'${_last.get("cost")}. Download your data below — it is '
-                       f'handed to you here, not stored on the server.')
+                       f'${_last.get("cost")}. Everything below is computed here '
+                       f'in your browser and downloadable — nothing is stored '
+                       f'on the server.')
             m1, m2, m3 = st.columns(3)
             m1.metric("Runs", len(_rows))
-            m2.metric("OK", _ok)
+            m2.metric("Answers OK", _ok)
             m3.metric("Cost (USD)", f'${_last.get("cost")}')
+
+            # Did your brand / competitors get mentioned in the answers?
+            _ents = st.session_state.get("qr_last_entities") or []
+            if _ents and _rows:
+                st.markdown("**Did your brand get mentioned?**")
+                for _i, _nm in enumerate(_ents):
+                    _c = sum(1 for _r in _rows if _nm.lower()
+                             in (_r.get("answer_text") or "").lower())
+                    _who = " *(your brand)*" if _i == 0 else ""
+                    _tick = "✅" if _c else "❌"
+                    st.write(f"- {_tick} **{_nm}**{_who} — mentioned in "
+                             f"{_c}/{len(_rows)} answers")
+
+            # Top fan-out queries the model ran.
+            _tq = _last.get("_top_queries") or []
+            if _tq:
+                st.markdown("**Top fan-out queries** — what the model searched")
+                for _q, _n in _tq:
+                    st.write(f"- {_q}  ·  {_n}×")
+
+            # Top domains cited in the answers.
+            _td = _last.get("_top_domains") or []
+            if _td:
+                st.markdown("**Top cited sites** — domains cited in the answers")
+                for _d, _n in _td:
+                    st.write(f"- {_d}  ·  {_n} citation(s)")
+
+            st.markdown("**Download this run** — data is not kept on the server")
             _bundle = json.dumps(
                 {"rows": _rows, "raw": _last.get("raw") or []},
                 ensure_ascii=False, indent=2).encode("utf-8")
-            st.download_button(
-                "⬇ Download this run (JSON — full data + raw responses)",
-                _bundle, file_name="retrieval-studio-run.json",
+            d1, d2 = st.columns(2)
+            d1.download_button(
+                "⬇ Full data + raw (JSON)", _bundle,
+                file_name="retrieval-studio-run.json",
                 mime="application/json", type="primary")
             if _rows:
                 _df = pd.DataFrame(_rows)
-                st.download_button(
-                    "⬇ Download runs table (CSV)",
+                d2.download_button(
+                    "⬇ Runs table (CSV)",
                     _df.to_csv(index=False).encode("utf-8"),
                     file_name="retrieval-studio-run.csv", mime="text/csv")
                 _pv = [c for c in ("prompt_id", "run_number", "actual_model",
                                    "status", "num_citations",
                                    "num_search_actions", "cost_usd")
                        if c in _df.columns]
-                with st.expander("Preview this run"):
+                with st.expander("Preview the runs table"):
                     st.dataframe(_df[_pv] if _pv else _df, width="stretch")
-                _ents = st.session_state.get("qr_last_entities") or []
-                if _ents:
-                    st.markdown("**Brand / competitor mentions in answers**")
-                    for _nm in _ents:
-                        _c = sum(1 for _r in _rows if _nm.lower()
-                                 in (_r.get("answer_text") or "").lower())
-                        st.write(f"- **{_nm}** — {_c}/{len(_rows)} answers")
 
 # --------------------------------------------------------------------------- #
 # BUILD — Study Setup
