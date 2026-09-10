@@ -186,7 +186,7 @@ if HOSTED:
         g_org = st.text_input("Organisation (optional)")
         g_entered = st.text_input("Access code", type="password")
         g_consent = st.checkbox(
-            "I agree to be contacted about Fan-Out Studio, and I understand "
+            "I agree to be contacted about Retrieval Studio, and I understand "
             "my prompts are sent to OpenAI for processing. My API key is sent "
             "directly to OpenAI and is not stored by this app; my research "
             "data is temporary and deleted when my session expires.")
@@ -238,6 +238,9 @@ section[data-testid="stSidebar"] {{
 }}
 .pd-banner .t {{ font-size: 1.45rem; font-weight: 800; }}
 .pd-banner .s {{ color: #d9c9e8; font-size: .85rem; margin-top: 2px; }}
+.app-title {{ font-size: 1.9rem; font-weight: 800; line-height: 1.15;
+  letter-spacing: -.01em; margin: 2px 0 10px 0; }}
+.app-title .rs-accent {{ color: {ORANGE}; }}
 .badge {{ display:inline-block; padding: 3px 12px; border-radius: 999px;
   font-weight: 800; font-size: .8rem; letter-spacing: .06em; }}
 .badge-live {{ background:#B8E900; color:#1a2400; }}
@@ -294,7 +297,9 @@ def pricing():
 # --------------------------------------------------------------------------- #
 
 with st.sidebar:
-    st.markdown("### 🔎 Fan-Out Studio")
+    st.markdown("<div class='app-title'>🔎 Retrieval "
+                "<span class='rs-accent'>Studio</span></div>",
+                unsafe_allow_html=True)
     slist = studies()
     if slist:
         names = {f'{s["study_name"]}': s for s in slist}
@@ -304,34 +309,14 @@ with st.sidebar:
         pick = st.selectbox("Study", list(names.keys()), index=idx)
         set_study(names[pick])
     else:
-        st.caption("No studies yet — create one in Study Setup.")
+        st.caption("No runs yet — start on Quick Run.")
 
-    # Two radio groups that never shadow each other: picking in one resets
-    # the other to "—", so every click navigates.
-    st.session_state.setdefault("nav_build", "Quick Run")
-    st.session_state.setdefault("nav_analyse", "—")
-
-    def _picked_build():
-        st.session_state["nav_analyse"] = "—"
-
-    def _picked_analyse():
-        if st.session_state["nav_analyse"] != "—":
-            st.session_state["nav_build"] = "—"
-
-    st.radio("Build Study", [
-        "—", "Quick Run", "Study Setup", "Prompts", "Locations",
-        "Tracked Entities", "Review & Run"], key="nav_build",
-        on_change=_picked_build)
-    st.radio("Analyse", [
-        "—", "Overview", "Search & Evidence Traces", "Prompt Coverage",
+    # Single nav. Build Study was retired for the ephemeral deployment —
+    # brand/competitor tracking now lives inline on Quick Run.
+    page = st.radio("Navigate", [
+        "Quick Run", "Overview", "Search & Evidence Traces", "Prompt Coverage",
         "Fan-Out Queries", "Sources", "Entity Comparison", "Citation Gaps",
-        "Query Clusters", "Exports"], key="nav_analyse",
-        on_change=_picked_analyse)
-    page = (st.session_state["nav_analyse"]
-            if st.session_state["nav_analyse"] != "—"
-            else st.session_state["nav_build"])
-    if page == "—":
-        page = "Quick Run"
+        "Query Clusters", "Exports"], key="nav")
 
     st.divider()
     if HOSTED:
@@ -463,19 +448,16 @@ if page == "Quick Run":
     q_runs = c2.number_input("Runs per prompt", 1, 20, 3, key="qr_runs",
                              help="Repeat runs turn one-off answers into "
                                   "rates.")
-    q_loc = c3.text_input("Location (City, Region, CC)",
+    q_loc = c3.text_input("Location (City, Region, CC — or just a country)",
                           "Melbourne, Victoria, AU", key="qr_loc")
-    ent_sources = {"None — unbranded research": None}
-    for stu in studies():
-        if stu.get("entities") and stu.get("mode") != "unbranded" \
-                and "sample" not in stu["study_id"]:
-            ent_sources[f'Track entities from: {stu["study_name"]}'] = stu
-    q_ents = st.selectbox("Tracked entities (optional)",
-                          list(ent_sources.keys()), key="qr_ents")
+    q_ent_text = st.text_area(
+        "Track brands / competitors (optional — one per line; the first is "
+        "yours, the rest are competitors)", key="qr_entities", height=90,
+        placeholder="Predicta Digital\nStudioHawk\nImpressive Digital")
 
     q_prompts = [l.strip() for l in (qp or "").splitlines() if l.strip()]
-    loc_parts = [p.strip() for p in q_loc.split(",")]
-    loc_ok = len(loc_parts) == 3 and all(loc_parts)
+    q_parsed = ds.parse_location_string(q_loc)
+    loc_ok = q_parsed is not None
     q_total = len(q_prompts) * int(q_runs)
     q_rate = pricing().get(q_model, {})
     q_est = q_total * ((28000 / 1e6) * q_rate.get("input_per_mtok", 0)
@@ -484,7 +466,8 @@ if page == "Quick Run":
     st.caption(f"**{len(q_prompts)} prompt(s) × {int(q_runs)} runs = "
                f"{q_total} live calls · estimated ~${q_est:.2f}**")
     if not loc_ok and q_loc.strip():
-        st.error("Location needs the form: City, Region, CC")
+        st.error("Location not recognised — use 'City, Region, CC', "
+                 "'City, CC', or just a country (e.g. Australia).")
 
     env_key = os.environ.get("OPENAI_API_KEY", "")
     q_typed = "" if env_key else st.text_input(
@@ -510,15 +493,22 @@ if page == "Quick Run":
             st.error(key_msg)
             st.stop()
         from openai import OpenAI
-        src = ent_sources[q_ents]
-        entities = [dict(e) for e in src["entities"]] if src else []
+        _ent_names, _seen = [], set()
+        for _l in (q_ent_text or "").splitlines():
+            _n = _l.strip()
+            if _n and _n.lower() not in _seen:
+                _seen.add(_n.lower())
+                _ent_names.append(_n)
+        entities = [new_entity(_n,
+                               role=("primary" if _i == 0 else "competitor"))
+                    for _i, _n in enumerate(_ent_names)]
+        st.session_state["qr_last_entities"] = list(_ent_names)
         study = ds.create_study(
             f"Quick run {time.strftime('%Y-%m-%d %H%M')}",
             mode=("multi" if len(entities) > 1 else
                   "single" if entities else "unbranded"),
             entities=entities, prompts=pr.from_lines(qp),
-            locations=[{"city": loc_parts[0], "region": loc_parts[1],
-                        "country": loc_parts[2]}],
+            locations=[q_parsed],
             prompt_set_version="quick-v1",
             notes="Created by Quick Run.")
         manifest = ds.create_dataset(study, "live", requested_model=q_model,
@@ -540,12 +530,52 @@ if page == "Quick Run":
 
         res = runner.run_batch(client, study, manifest, pricing(),
                                progress=qcb)
-        if res["aborted"]:
-            st.error(f'Run ABORTED — {redact(res["abort_reason"])}')
+        st.session_state["qr_last"] = res
+
+    # Run result + in-memory download. Rendered OUTSIDE the Run-now button so it
+    # survives the rerun a download click triggers, and so your data is handed
+    # to you directly here — never dependent on server-side storage.
+    _last = st.session_state.get("qr_last")
+    if _last:
+        if _last.get("aborted"):
+            st.error(f'Run ABORTED — {redact(_last.get("abort_reason") or "")}')
         else:
-            st.success(f'Done: {res["ok"]} ok, {res["failed"]} failed, '
-                       f'${res["cost"]}. Open **Analyse ▸ Overview** or '
-                       f'**Search & Evidence Traces**.')
+            _rows = _last.get("rows") or []
+            _ok = sum(1 for r in _rows if r.get("status") == "ok")
+            _failed = len(_rows) - _ok
+            st.success(f'Run complete — {_ok} ok, {_failed} failed, '
+                       f'${_last.get("cost")}. Download your data below — it is '
+                       f'handed to you here, not stored on the server.')
+            m1, m2, m3 = st.columns(3)
+            m1.metric("Runs", len(_rows))
+            m2.metric("OK", _ok)
+            m3.metric("Cost (USD)", f'${_last.get("cost")}')
+            _bundle = json.dumps(
+                {"rows": _rows, "raw": _last.get("raw") or []},
+                ensure_ascii=False, indent=2).encode("utf-8")
+            st.download_button(
+                "⬇ Download this run (JSON — full data + raw responses)",
+                _bundle, file_name="retrieval-studio-run.json",
+                mime="application/json", type="primary")
+            if _rows:
+                _df = pd.DataFrame(_rows)
+                st.download_button(
+                    "⬇ Download runs table (CSV)",
+                    _df.to_csv(index=False).encode("utf-8"),
+                    file_name="retrieval-studio-run.csv", mime="text/csv")
+                _pv = [c for c in ("prompt_id", "run_number", "actual_model",
+                                   "status", "num_citations",
+                                   "num_search_actions", "cost_usd")
+                       if c in _df.columns]
+                with st.expander("Preview this run"):
+                    st.dataframe(_df[_pv] if _pv else _df, width="stretch")
+                _ents = st.session_state.get("qr_last_entities") or []
+                if _ents:
+                    st.markdown("**Brand / competitor mentions in answers**")
+                    for _nm in _ents:
+                        _c = sum(1 for _r in _rows if _nm.lower()
+                                 in (_r.get("answer_text") or "").lower())
+                        st.write(f"- **{_nm}** — {_c}/{len(_rows)} answers")
 
 # --------------------------------------------------------------------------- #
 # BUILD — Study Setup
@@ -640,7 +670,8 @@ elif page == "Prompts":
             c1, c2, c3 = st.columns(3)
             cat = c1.text_input("Category")
             intent = c2.text_input("Intent")
-            loc = c3.text_input("Location override (City, Region, CC)")
+            loc = c3.text_input("Location override (City, Region, CC — "
+                                "or just a country)")
             notes_p = st.text_input("Notes")
             active = st.checkbox("Active", value=True)
             if st.form_submit_button("Add prompt", type="primary") \
