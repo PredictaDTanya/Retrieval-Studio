@@ -166,15 +166,17 @@ st.set_page_config(page_title="Retrieval Studio", page_icon="🔎",
 import uuid as _uuid
 
 HOSTED = hosting.is_hosted()
-if HOSTED:
-    # Stable per-session id (one per browser session), then scope ALL storage
-    # to this session's temporary workspace so visitors never share data.
-    if "_sid" not in st.session_state:
-        st.session_state["_sid"] = _uuid.uuid4().hex
-    _sid = st.session_state["_sid"]
-    ds.set_session_root(hosting.session_workspace(_sid))
-    hosting.gc_sessions()  # opportunistic cleanup of expired workspaces
+# ALWAYS scope storage to this browser session's own temporary workspace, so
+# no visitor ever sees another's runs (even on a shared public URL) and nothing
+# lands in a shared persistent store. Workspaces are TTL garbage-collected. The
+# Analyse pages read THIS session's own data, so they keep working.
+if "_sid" not in st.session_state:
+    st.session_state["_sid"] = _uuid.uuid4().hex
+_sid = st.session_state["_sid"]
+ds.set_session_root(hosting.session_workspace(_sid))
+hosting.gc_sessions()  # opportunistic cleanup of expired workspaces
 
+if HOSTED:
     # Optional access gate for a gated beta — captures name + email (lead
     # capture) alongside the access code.
     _code = hosting.access_code()
@@ -311,9 +313,12 @@ with st.sidebar:
     else:
         st.caption("No runs yet — start on Quick Run.")
 
-    # In-memory deployment: a run writes nothing to the server, so the
-    # disk-backed Analyse pages are hidden — everything is on Quick Run.
-    page = "Quick Run"
+    # Quick Run + the Analyse views. Storage is isolated per browser session,
+    # so the Analyse pages show only your own runs — no one else's.
+    page = st.radio("Navigate", [
+        "Quick Run", "Overview", "Search & Evidence Traces", "Prompt Coverage",
+        "Fan-Out Queries", "Sources", "Entity Comparison", "Citation Gaps",
+        "Query Clusters", "Exports"], key="nav")
 
     st.divider()
     if HOSTED:
@@ -501,6 +506,18 @@ if page == "Quick Run":
                                role=("primary" if _i == 0 else "competitor"))
                     for _i, _n in enumerate(_ent_names)]
         st.session_state["qr_last_entities"] = list(_ent_names)
+        study = ds.create_study(
+            f"Quick run {time.strftime('%Y-%m-%d %H%M')}",
+            mode=("multi" if len(entities) > 1 else
+                  "single" if entities else "unbranded"),
+            entities=entities, prompts=pr.from_lines(qp),
+            locations=[q_parsed], prompt_set_version="quick-v1",
+            notes="Created by Quick Run.")
+        manifest = ds.create_dataset(study, "live", requested_model=q_model,
+                                     runs_per_prompt=int(q_runs),
+                                     reasoning={"summary": "auto"})
+        set_study(study)
+        st.session_state["dataset_id"] = manifest["dataset_id"]
         client = OpenAI(api_key=q_key, timeout=240, max_retries=1)
         prog = st.progress(0.0)
         stat = st.empty()
@@ -513,55 +530,31 @@ if page == "Quick Run":
                 f'{info["ok"]} · failed {info["failed"]} · '
                 f'{info["elapsed_s"]}s · ${info["cost"]}')
 
-        # Privacy by design: run into a throwaway temp workspace and delete it
-        # immediately afterwards, so NOTHING is written to the server's
-        # persistent store and no other visitor can ever see this run. The
-        # results (rows + raw) are captured in memory for the dashboard and
-        # download below.
-        import tempfile as _tf
-        import shutil as _sh
+        res = runner.run_batch(client, study, manifest, pricing(),
+                               progress=qcb)
+        # In-memory rollups for the on-page dashboard.
         from core.extraction import extract_observation as _extract
         from collections import Counter as _Counter
-        _tmp = _tf.mkdtemp(prefix="rs_run_")
-        _prev_root = ds._session_root.get()
-        ds.set_session_root(os.path.join(_tmp, "studies"))
-        try:
-            study = ds.create_study(
-                f"Quick run {time.strftime('%Y-%m-%d %H%M')}",
-                mode=("multi" if len(entities) > 1 else
-                      "single" if entities else "unbranded"),
-                entities=entities, prompts=pr.from_lines(qp),
-                locations=[q_parsed], prompt_set_version="quick-v1",
-                notes="Created by Quick Run.")
-            manifest = ds.create_dataset(
-                study, "live", requested_model=q_model,
-                runs_per_prompt=int(q_runs), reasoning={"summary": "auto"})
-            res = runner.run_batch(client, study, manifest, pricing(),
-                                   progress=qcb)
-            # In-memory rollups for the on-page dashboard.
-            _qc, _dc = _Counter(), _Counter()
-            for _it in res.get("raw") or []:
-                _rawr = _it.get("response")
-                if not _rawr:
-                    continue
-                try:
-                    _ex = _extract(_rawr, None)
-                except Exception:
-                    continue
-                for _q in _ex.get("fanout_queries", []):
-                    _qt = (_q.get("query") or "").strip()
-                    if _qt:
-                        _qc[_qt] += 1
-                for _c in _ex.get("citations", []):
-                    _dom = _c.get("domain") or ""
-                    if _dom:
-                        _dc[_dom] += 1
-            res["_top_queries"] = _qc.most_common(5)
-            res["_top_domains"] = _dc.most_common(5)
-            st.session_state["qr_last"] = res
-        finally:
-            ds.set_session_root(_prev_root)
-            _sh.rmtree(_tmp, ignore_errors=True)
+        _qc, _dc = _Counter(), _Counter()
+        for _it in res.get("raw") or []:
+            _rawr = _it.get("response")
+            if not _rawr:
+                continue
+            try:
+                _ex = _extract(_rawr, None)
+            except Exception:
+                continue
+            for _q in _ex.get("fanout_queries", []):
+                _qt = (_q.get("query") or "").strip()
+                if _qt:
+                    _qc[_qt] += 1
+            for _c in _ex.get("citations", []):
+                _dom = _c.get("domain") or ""
+                if _dom:
+                    _dc[_dom] += 1
+        res["_top_queries"] = _qc.most_common(5)
+        res["_top_domains"] = _dc.most_common(5)
+        st.session_state["qr_last"] = res
 
     # Run result + in-memory download. Rendered OUTSIDE the Run-now button so it
     # survives the rerun a download click triggers, and so your data is handed
@@ -575,9 +568,9 @@ if page == "Quick Run":
             _ok = sum(1 for r in _rows if r.get("status") == "ok")
             _failed = len(_rows) - _ok
             st.success(f'Run complete — {_ok} ok, {_failed} failed, '
-                       f'${_last.get("cost")}. Everything below is computed here '
-                       f'in your browser and downloadable — nothing is stored '
-                       f'on the server.')
+                       f'${_last.get("cost")}. Your data is private to this '
+                       f'session — no other visitor can see it, and it clears '
+                       f'when the session ends. Download below to keep it.')
             m1, m2, m3 = st.columns(3)
             m1.metric("Runs", len(_rows))
             m2.metric("Answers OK", _ok)
