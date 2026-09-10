@@ -1,0 +1,24 @@
+[
+  {
+    "entity_id": "ent_acme",
+    "name": "Acme Roasters",
+    "primary_domain": "acme-roasters.example",
+    "alt_domains": [],
+    "aliases": [
+      "acme"
+    ],
+    "entity_type": "business",
+    "role": "primary",
+    "notes": "fictional example"
+  },
+  {
+    "entity_id": "ent_example",
+    "name": "Example Coffee Co",
+    "primary_domain": "example-coffee.example",
+    "alt_domains": [],
+    "aliases": [],
+    "entity_type": "business",
+    "role": "comparison",
+    "notes": "fictional example"
+  }
+]

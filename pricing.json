@@ -1,0 +1,8 @@
+{
+  "_note": "Application-owned model pricing (USD). Token rates per 1M tokens; per_web_search_call is the web_search tool fee per call ($10/1k calls = 0.01). Search-content tokens are billed at model rates and already appear in input_tokens - don't double count. Verify against https://developers.openai.com/api/docs/pricing (rates move). 'gpt-5.6' is not a distinct SKU; run an explicit variant. gpt-6-astra is a separate gpt-6 flagship (not a gpt-5.6 variant) at ~2.5x Sol's per-token rate.",
+  "gpt-5.6":       { "input_per_mtok": 4.00, "cached_input_per_mtok": 0.40, "output_per_mtok": 20.00, "per_web_search_call": 0.01 },
+  "gpt-5.6-sol":   { "input_per_mtok": 4.00, "cached_input_per_mtok": 0.40, "output_per_mtok": 20.00, "per_web_search_call": 0.01 },
+  "gpt-5.6-terra": { "input_per_mtok": 2.00, "cached_input_per_mtok": 0.20, "output_per_mtok": 12.00, "per_web_search_call": 0.01 },
+  "gpt-5.6-luna":  { "input_per_mtok": 0.20, "cached_input_per_mtok": 0.02, "output_per_mtok": 1.20,  "per_web_search_call": 0.01 },
+  "gpt-6-astra":   { "input_per_mtok": 10.00, "cached_input_per_mtok": 1.00, "output_per_mtok": 50.00, "per_web_search_call": 0.01 }
+}

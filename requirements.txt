@@ -1,0 +1,7 @@
+# Pinned direct dependencies (tested versions). Python >= 3.12.
+# Transitive versions are resolved by pip; upper bounds guard majors.
+openai>=3.5,<4
+streamlit>=1.57,<2
+pandas>=2.2,<4
+openpyxl>=3.1,<4
+altair>=6.1,<7

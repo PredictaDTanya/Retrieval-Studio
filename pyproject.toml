@@ -1,0 +1,25 @@
+[project]
+name = "retrieval-studio"
+version = "0.1.2b1"
+description = "Local research platform for studying OpenAI Responses API web-search behaviour: fan-out queries, sources, citations, entity visibility."
+readme = "README.md"
+requires-python = ">=3.12"
+license = { file = "LICENSE" }
+authors = [{ name = "Tanya Bhattacharya" }]
+keywords = ["geo", "aeo", "ai-search", "openai", "fan-out", "citations",
+            "research"]
+classifiers = [
+  "Development Status :: 4 - Beta",
+  "Programming Language :: Python :: 3.12",
+  "Programming Language :: Python :: 3.13",
+  "Programming Language :: Python :: 3.14",
+  "License :: OSI Approved :: GNU Affero General Public License v3",
+]
+
+[project.urls]
+Homepage = "https://github.com/PredictaDTanya/Retrieval-Studio"
+Repository = "https://github.com/PredictaDTanya/Retrieval-Studio"
+Issues = "https://github.com/PredictaDTanya/Retrieval-Studio/issues"
+
+[tool.setuptools]
+packages = ["core"]

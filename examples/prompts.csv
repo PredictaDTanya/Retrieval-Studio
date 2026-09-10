@@ -1,0 +1,4 @@
+prompt_id,prompt_text,category,intent,location,active,notes
+E01,"Who are the best coffee roasters in Springfield?",discovery,commercial,,TRUE,
+E02,"Recommend a specialist for espresso machine repair.",services,commercial,"Springfield, Victoria, AU",TRUE,location override example
+E03,"What should I look for when choosing a coffee subscription?",research,informational,,TRUE,

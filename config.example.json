@@ -1,0 +1,13 @@
+{
+  "_note": "Copy to config.json and edit. Used only by the retired v1 CLI (legacy/) and as the migration source for 'Import v1 data'. The v2 app manages entities per-study in the UI. Entities here are FICTIONAL examples.",
+  "prompt_set_version": "v1",
+  "client": {
+    "name": "Acme Agency",
+    "domains": ["acme-agency.example"],
+    "name_variants": ["acme"]
+  },
+  "competitors": [
+    { "name": "Example Digital", "domains": ["example-digital.example"], "variants": [] },
+    { "name": "Sample Partners", "domains": ["sample-partners.example"], "variants": [] }
+  ]
+}

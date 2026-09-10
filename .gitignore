@@ -1,0 +1,23 @@
+# Run data - evidence stores, raw API responses, generated reports.
+# The code is the repo; research data stays local.
+data/
+output/
+sample_output/
+raw/
+*.db
+*.xlsx
+*.log
+
+# Runtime noise
+__pycache__/
+*.pyc
+
+# Local secrets & private config (use config.example.json / .env.example)
+.env
+*.key
+.streamlit/secrets.toml
+config.json
+COMPARABLES.md
+
+# private working branch only
+legacy/
