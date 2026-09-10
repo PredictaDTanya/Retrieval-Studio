@@ -93,6 +93,10 @@ def run_batch(client, study: dict, manifest: dict, pricing: dict,
     t0 = time.time()
     aborted, abort_reason = False, ""
     reasoning_supported = True
+    # Collected in memory so the caller can hand the data to the user directly,
+    # independent of any server-side storage (ephemeral hosts, etc.).
+    stored_rows = []
+    raw_dumps = []
 
     conn = ds.open_db(ds.dataset_db_path(manifest["study_id"],
                                          manifest["dataset_id"]))
@@ -220,6 +224,10 @@ def run_batch(client, study: dict, manifest: dict, pricing: dict,
                         cost_total += float(row.get("cost_usd") or 0)
                     else:
                         n_failed += 1
+                    stored_rows.append(row)
+                    raw_dumps.append({"observation_id": obs_id,
+                                      "status": row.get("status"),
+                                      "response": raw})
                     note("stored", prompt.get("prompt_id"), run_no, loc_str)
                     if sleep_between > 0:
                         time.sleep(sleep_between)
@@ -233,4 +241,5 @@ def run_batch(client, study: dict, manifest: dict, pricing: dict,
 
     return {"ok": n_ok, "failed": n_failed, "cost": round(cost_total, 4),
             "aborted": aborted, "abort_reason": abort_reason,
-            "reasoning_supported": reasoning_supported}
+            "reasoning_supported": reasoning_supported,
+            "rows": stored_rows, "raw": raw_dumps}
