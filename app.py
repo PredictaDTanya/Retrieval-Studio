@@ -77,7 +77,7 @@ def forget_key_button(*state_keys):
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 SETTINGS_PATH = os.path.join(HERE, "data", "ui_settings.json")
-MODELS = ["gpt-5.6-sol", "gpt-5.6-terra", "gpt-5.6-luna", "gpt-6-astra"]
+MODELS = ["gpt-5.6-sol", "gpt-5.6-terra", "gpt-5.6-luna", "gpt-6.1-sol", "gpt-6-astra"]
 
 # Models materially pricier than Sol get a cost caption under the selector.
 # Sol stays first (the default) so a flagship is never picked by accident.
